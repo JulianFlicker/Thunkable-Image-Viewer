@@ -1,0 +1,246 @@
+<html>
+<head>
+	<meta name="viewport" content="width=device-width, user-scalable=no"/>
+	<style>
+        html, body{
+            margin: 0;
+            padding: 0;
+            overscroll-behavior: none;
+            overflow: hidden;
+            touch-action: none;
+
+            width: 100%;
+            height: 100%;
+        }
+        canvas{
+            height: 100%;
+            width: 100%;
+        }
+	</style>
+	<script src="https://thunkable.github.io/webviewer-extension/thunkableWebviewerExtension.js" type="text/javascript"></script>
+	<title>Image Viewer</title>
+</head>
+<body>
+	<!--pre>DBG</pre-->
+	
+	<canvas></canvas>
+	
+	<!--div style="display: grid;place-items: center;position: absolute;inset: 0">
+		<div style="outline: 5px solid red"></div>
+	</div-->
+	
+
+	<script>
+		function DEBUG(x){
+			const pre=document.getElementsByTagName("pre")[0];
+			if(pre) pre.textContent+="\n"+x;
+		}
+		
+		function receive(data){
+			DEBUG("received: "+data);
+			if(typeof data==="string")data=JSON.parse(data);
+			else if("type" in data)return;//Data is coming from own webpage
+			
+			const rect=document.body.getBoundingClientRect();
+			const cx=rect.width/2;
+			const cy=rect.height/2;
+	
+	
+			if("x" in data&&"y" in data) center(data.x,data.y);
+			if("zoom" in data) scale(data.zoom/zoom*masterZoom,cx,cy);
+			if("zoomBy" in data) scale(data.zoomBy,cx,cy);
+			if("rotate" in data) rotate(data.rotate*Math.PI/180-rot,cx,cy);
+			if("rotateBy" in data) rotate(data.rotateBy*Math.PI/180,cx,cy);
+			if("image" in data){
+				if(imgBuffer.has(data.image)){
+					img=imgBuffer.get(data.image);
+					if("x" in data&&"y" in data) img.onload=apply;
+					else center(img.width/2,img.height/2);// <<-- START POSITION, FOR NEW IMAGE
+				}else{
+					img=new Image();
+					if("x" in data&&"y" in data) img.onload=apply;
+					else img.onload=()=>{
+						center(img.width/2,img.height/2);// <<-- START POSITION, FOR NEW IMAGE
+						apply();
+					};
+					img.src=data.image;
+					DEBUG(img.src);
+				}
+			}
+	
+			apply();
+		}
+	
+	
+		let imgBuffer=new Map();
+		let img=new Image();
+		img.onload=()=>{
+			center(img.width/2,img.height/2);// <<-- START POSITION
+			apply();
+		};
+		img.src='data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg"/>';// <<-- START IMAGE
+		console.log("LOADING");
+	
+	
+		const canvas=document.getElementsByTagName("canvas")[0];
+		const startZoom=100;// <<-- START SIZE
+		const masterZoom=(canvas.clientWidth+canvas.clientHeight)/2/startZoom;
+		let x=0;
+		let y=0;
+		let rot=0;
+		let zoom=masterZoom;
+	
+		/** @type {PointerEvent} */
+		let currPointer,otherPointer,startPointer;
+	
+		//region Vector math
+		function translate(dx,dy){
+			x+=dx;
+			y+=dy;
+		}
+	
+		function rotate(angle,px,py){
+			let dx=x-px;
+			let dy=y-py;
+			rot+=angle;
+			let cos=Math.cos(angle);
+			let sin=Math.sin(angle);
+			x=px+dx*cos-dy*sin;
+			y=py+dx*sin+dy*cos;
+		}
+	
+		function scale(by,px,py){
+			zoom*=by;
+			x=px+(x-px)*by;
+			y=py+(y-py)*by;
+		}
+	
+		function center(px,py){
+			[px,py]=imgToScreen(px,py);
+			const rect=document.body.getBoundingClientRect();
+			translate(rect.width/2-px,rect.height/2-py);
+		}
+	
+		function screenToImg(ix,iy){
+			let dx=ix-x;
+			let dy=iy-y;
+			let invZoom=1/zoom;
+			let ox=dx*invZoom;
+			let oy=dy*invZoom;
+			let cos=Math.cos(-rot);
+			let sin=Math.sin(-rot);
+			let nx=ox*cos-oy*sin;
+			let ny=ox*sin+oy*cos;
+			return [nx,ny];
+		}
+	
+		function imgToScreen(ox,oy){
+			let cos=Math.cos(rot);
+			let sin=Math.sin(rot);
+			let nx=ox*cos-oy*sin;
+			let ny=ox*sin+oy*cos;
+			nx*=zoom;
+			ny*=zoom;
+			nx+=x;
+			ny+=y;
+			return [nx,ny];
+		}
+	
+		function apply(){
+			canvas.width=canvas.clientWidth;
+			canvas.height=canvas.clientHeight;
+	
+			const ctx=canvas.getContext("2d");
+	
+			ctx.imageSmoothingEnabled=true;
+			ctx.imageSmoothingQuality="high";
+			ctx.save();
+			ctx.translate(x,y);
+			ctx.rotate(rot);
+			ctx.scale(zoom,zoom);
+			ctx.drawImage(img,0,0);
+	
+			ctx.restore();
+		}
+	
+		//endregion
+	
+		//region Multi Touch Support & events
+		
+		ThunkableWebviewerExtension.receiveMessage(receive);
+		document.body.onpointerdown=e=>{
+			if(e.pointerType=="mouse"&&e.button!=0) return;
+	
+			if(!currPointer) currPointer=startPointer=e;
+			else if(!otherPointer){
+				otherPointer=e;
+				startPointer=null;
+			}
+		};
+		document.body.onpointerup=e=>{
+			if(e.pointerId===otherPointer?.pointerId) otherPointer=null;
+			else if(e.pointerId===currPointer?.pointerId){
+				currPointer=otherPointer;
+				otherPointer=null;
+	
+				if(startPointer){
+					startPointer=null;
+					const [ix,iy]=screenToImg(e.x,e.y);
+
+					let msg={
+						type:"click",
+						x:ix,
+						y:iy,
+					};
+					postMessage(msg);
+					ThunkableWebviewerExtension.postMessage(JSON.stringify(msg));
+				}
+			}
+		};
+		document.body.onpointercancel=document.body.onpointerup;
+		document.body.onpointerleave=document.body.onpointerup;
+		document.body.oncontextmenu=e=>currPointer&&e.preventDefault();//No context menu while dragging
+		document.body.onpointermove=e=>{
+	
+			//Click detection
+			if(startPointer){
+				let dx=e.x-startPointer.x;
+				let dy=e.y-startPointer.y;
+				if(dx*dx+dy*dy>4*4) startPointer=null;
+			}
+	
+			//Single Finger
+			if(currPointer&& !otherPointer){
+				translate(e.x-currPointer.x,e.y-currPointer.y);
+				currPointer=e;
+				apply();
+				return;
+			}else if(e.pointerId!==currPointer?.pointerId&&e.pointerId!==otherPointer?.pointerId) return;
+			//Swap fingers, so currPointer is always the one that moved now
+			if(e.pointerId===otherPointer.pointerId) [currPointer,otherPointer]=[otherPointer,currPointer];
+	
+			//Multi Finger
+			translate((e.x-currPointer.x)/2,(e.y-currPointer.y)/2);
+			const posX=(e.x+otherPointer.x)/2;
+			const posY=(e.y+otherPointer.y)/2;
+	
+			const angle=Math.atan2(currPointer.x-otherPointer.x,currPointer.y-otherPointer.y)-Math.atan2(e.x-otherPointer.x,e.y-otherPointer.y);
+			rotate(angle,posX,posY);
+	
+			const zoom=Math.hypot(e.x-otherPointer.x,e.y-otherPointer.y)/Math.hypot(currPointer.x-otherPointer.x,currPointer.y-otherPointer.y);
+			scale(zoom,posX,posY);
+	
+			currPointer=e;
+			apply();
+		};
+		//Allow zooming using MouseWheel
+		document.body.onwheel=e=>{
+			if(e.deltaY==0) return;
+			const by=1.1;
+			scale(e.deltaY<0?by:1/by,e.x,e.y);
+			apply();
+		};
+		//endregion
+	</script>
+</body>
+</html>
