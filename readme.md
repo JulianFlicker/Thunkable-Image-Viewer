@@ -1,10 +1,11 @@
 # Usage
-Change the startup parameters in the maps.html file, if desired.
-Upload the maps.html file to Thunkable.
-Create a web viewer and use "maps.html" as the URL.
-Communication with the module can be done via "Post Message" and "Receive Message".
+
+Upload the maps.html file to Thunkable.  
+Create a web viewer and use `maps.html` as the URL.  
+Communication with the module can be done via "Post Message" and "Receive Message" using JSON.  
 
 # Post Message
+
 An object should be sent that may contain the following properties:
 * `x` & `y`: Position to be centered on
 * `zoom`: Absolute zoom value
@@ -19,12 +20,17 @@ Use `generate JSON from object` Node on the object before sending, otherwise it 
 
 
 # Receive Message
+
 When clicking on the image, an object is received with the properties:
-* `type`: This always contains "click" if in the future multiple different messages need to be distinguished.
+* `type`: This always contains "click", for now
 * `x` & `y`: Position on the image; can also be negative or larger than the image if clicking beside the image.
 Use `get object from JSON` Node on the message, to extract the content, otherwise it won't work on the phone
 
 
 
 # Example
-![example.png](example/example.png)
+
+Design:
+![design.png](example/design.png)
+Blocks:
+![blocks.png](example/blocks.png)
