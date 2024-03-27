@@ -1,7 +1,7 @@
 # Usage
 
-Upload the maps.html file to Thunkable.  
-Create a web viewer and use `maps.html` as the URL.  
+Upload the index.html file to Thunkable.  
+Create a web viewer and use `index.html` as the URL.  
 Communication with the module can be done via "Post Message" and "Receive Message" using JSON.  
 
 # Post Message
